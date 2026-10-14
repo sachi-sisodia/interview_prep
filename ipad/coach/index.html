@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Think Aloud Coach</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Coach">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a whiteboard wall for a big monitor: problem | what you said | coach, collapsing to one column on narrow screens. */
+:root {
+  --bg: #f3f5f9;
+  --panel: #ffffff;
+  --ink: #161b26;
+  --muted: #5b6475;
+  --line: #d9dee8;
+  --accent: #2153d1;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4ebfc;
+  --good: #137a4b;  --good-soft: #def3e8;
+  --warn: #9a5b00;  --warn-soft: #fbefd9;
+  --bad: #b3261e;   --bad-soft: #fbe3e1;
+  --code-bg: #f0f2f7;
+  --f-display: "Sora", "Avenir Next", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", -apple-system, system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1119; --panel: #161b26; --ink: #e6e9f0; --muted: #98a1b3; --line: #2a3142;
+  --accent: #7ea2ff; --accent-ink: #0b1430; --accent-soft: #1e2a4d;
+  --good: #5fd39a; --good-soft: #143326; --warn: #f2b45a; --warn-soft: #3a2a10;
+  --bad: #ff8a80; --bad-soft: #3d1a18; --code-bg: #0f131c; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0e1119; --panel: #161b26; --ink: #e6e9f0; --muted: #98a1b3; --line: #2a3142;
+  --accent: #7ea2ff; --accent-ink: #0b1430; --accent-soft: #1e2a4d;
+  --good: #5fd39a; --good-soft: #143326; --warn: #f2b45a; --warn-soft: #3a2a10;
+  --bad: #ff8a80; --bad-soft: #3d1a18; --code-bg: #0f131c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { font-size: 16px; }
+html.big { font-size: 20px; }
+body {
+  background: var(--bg); color: var(--ink); font: 1rem/1.55 var(--f-body); margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 32px;
+}
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; }
+h1 { font-size: 1.2rem; }
+h2 { font-size: 1rem; }
+h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-family: var(--f-body); font-weight: 600; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-block: 8px 12px;
+}
+.bar h1 { margin-right: auto; }
+.bar select { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); padding: 0 12px; max-width: 100%; }
+.btn { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); padding: 0 16px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.mic { min-width: 9.5em; justify-content: center; }
+.mic .dot { width: .7em; height: .7em; border-radius: 50%; background: currentColor; opacity: .6; }
+.mic.on { background: var(--bad); border-color: var(--bad); color: var(--panel); }
+.mic.on .dot { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(1.5); opacity: .4; } }
+
+.grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 820px) { .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); } .coach { grid-column: 1 / -1; } }
+@media (min-width: 1200px) { .grid { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr) minmax(0, 1.2fr); } .coach { grid-column: auto; } }
+.col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 10px; min-width: 0; }
+
+.statement { font-size: 1.05rem; margin: 0; }
+#customText { width: 100%; min-height: 6em; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 10px; resize: vertical; }
+ul.check { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+ul.check li { display: grid; grid-template-columns: 1.4em 1fr; gap: 6px; color: var(--muted); }
+ul.check li::before { content: "○"; color: var(--muted); }
+ul.check li.hit { color: var(--ink); }
+ul.check li.hit::before { content: "✓"; color: var(--good); font-weight: 700; }
+
+.talk-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.status { font-size: .85rem; color: var(--muted); }
+.status.live { color: var(--bad); font-weight: 600; }
+#transcript { width: 100%; min-height: 14em; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 12px; font-size: 1.05rem; line-height: 1.6; resize: vertical; }
+.interim { color: var(--muted); font-style: italic; min-height: 1.6em; margin: 0; overflow-wrap: anywhere; }
+.help { background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; font-size: .9rem; margin: 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.small { font-size: .85rem; color: var(--muted); }
+label.toggle { display: inline-flex; gap: 8px; align-items: center; font-size: .9rem; min-height: 44px; cursor: pointer; }
+label.toggle input { width: 1.2em; height: 1.2em; }
+
+ol.signals { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sig { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 10px 12px; border-radius: 10px; border-left: 4px solid; animation: in .25s ease-out; }
+@keyframes in { from { transform: translateY(-4px); opacity: .3; } }
+.sig b { font-weight: 600; }
+.sig .mark { font-weight: 700; grid-row: span 2; }
+.sig p { margin: 0; grid-column: 2; font-size: .92rem; }
+.sig.good { background: var(--good-soft); border-color: var(--good); } .sig.good .mark { color: var(--good); }
+.sig.warn { background: var(--warn-soft); border-color: var(--warn); } .sig.warn .mark { color: var(--warn); }
+.sig.bad  { background: var(--bad-soft);  border-color: var(--bad);  } .sig.bad .mark  { color: var(--bad); }
+.empty { color: var(--muted); margin: 0; }
+
+.verdict { display: inline-block; font: 600 .8rem var(--f-mono); padding: 4px 10px; border-radius: 999px; letter-spacing: .04em; }
+.verdict.on_track { background: var(--good-soft); color: var(--good); }
+.verdict.partly { background: var(--warn-soft); color: var(--warn); }
+.verdict.off_track { background: var(--bad-soft); color: var(--bad); }
+.review { display: grid; gap: 12px; }
+.review .headline { font-size: 1.1rem; font-weight: 600; margin: 0; }
+.review ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.review ul.right li::marker { content: "✓  "; color: var(--good); }
+.review ul.wrong li::marker { content: "✗  "; color: var(--bad); }
+.review p { margin: 0; max-width: 70ch; }
+.codewrap { position: relative; min-width: 0; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 0; overflow-x: auto; font: .88rem/1.55 var(--f-mono); tab-size: 4; }
+.copy { position: absolute; top: 6px; right: 6px; min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: .78rem; cursor: pointer; }
+details > summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+.key { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 12px; font-family: var(--f-mono); }
+.err { color: var(--bad); font-weight: 600; margin: 0; }
+.thinking { color: var(--muted); margin: 0; }
+@media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <h1>Think Aloud Coach</h1>
+  <select id="problem" aria-label="Practice problem"></select>
+  <button type="button" class="btn mic" id="mic"><span class="dot"></span><span id="micLabel">Start listening</span></button>
+  <button type="button" class="btn primary" id="ask">Ask Claude</button>
+  <button type="button" class="btn" id="big" aria-pressed="false">Large text</button>
+</header>
+
+<main class="grid">
+  <section class="col">
+    <div class="card">
+      <h3>Problem</h3>
+      <p class="statement" id="statement"></p>
+      <textarea id="customText" hidden placeholder="Paste or type any problem statement here."></textarea>
+    </div>
+    <div class="card">
+      <h3>Interview habits</h3>
+      <ul class="check" id="habits"></ul>
+      <h3>Key ideas for this problem</h3>
+      <ul class="check" id="ideas"></ul>
+    </div>
+  </section>
+
+  <section class="col">
+    <div class="card">
+      <div class="talk-head">
+        <h2>What you said</h2>
+        <span class="status" id="status">Not listening</span>
+      </div>
+      <p class="help" id="micHelp" hidden></p>
+      <textarea id="transcript" placeholder="Tap Start listening and explain your approach out loud. You can also type or edit here."></textarea>
+      <p class="interim" id="interim" aria-live="polite"></p>
+      <div class="row">
+        <button type="button" class="btn" id="clear">Clear</button>
+        <span class="small" id="words">0 words</span>
+        <label class="toggle" id="autoWrap" hidden><input type="checkbox" id="auto"> Ask Claude when I pause</label>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Live hints</h3>
+      <ol class="signals" id="signals"></ol>
+    </div>
+  </section>
+
+  <section class="col coach">
+    <div class="card">
+      <div class="talk-head"><h2>Claude's review</h2><span id="verdict"></span></div>
+      <div class="review" id="review"><p class="empty">Explain your approach, then tap <b>Ask Claude</b>. You'll get a verdict, what's right and wrong, an explanation, pseudocode and code.</p></div>
+    </div>
+    <div class="card">
+      <details id="refBox">
+        <summary>Reference solution (spoiler)</summary>
+        <div class="review" id="reference"></div>
+      </details>
+    </div>
+    <div class="card" id="keyCard" hidden>
+      <details id="keyBox">
+        <summary>Claude connection</summary>
+        <div class="review">
+          <p class="small">To get Claude's review when this page runs on its own, paste an Anthropic API key from console.anthropic.com. It is saved only in this browser on this device.</p>
+          <input id="apiKey" class="key" type="password" autocomplete="off" placeholder="sk-ant-..." aria-label="Anthropic API key">
+          <div class="row"><button type="button" class="btn" id="saveKey">Save key</button><button type="button" class="btn" id="forgetKey">Forget key</button><span class="small" id="keyState"></span></div>
+        </div>
+      </details>
+    </div>
+  </section>
+</main>
+
+<script>
+// ---------- Problem bank ----------
+const HABITS = [
+  { id: "clarify", re: /\b(clarif|assum|constraint|can i assume|input size|what if the input|are there duplicates|is (it|the array) sorted)/, label: "Ask clarifying questions" },
+  { id: "brute", re: /\b(brute force|naive|simplest (way|approach))/, label: "State a brute-force baseline" },
+  { id: "complexity", re: /(big o|\bo of\b|\bo\(|time complexity|space complexity|linear time|constant (space|time)|log(arithmic)? ?n\b|n log n)/, label: "Give time and space complexity" },
+  { id: "edge", re: /\b(edge case|empty|null|none|single (element|node|item|number)|zero|negative|duplicate|overflow)/, label: "Cover edge cases" },
+  { id: "test", re: /\b(test|dry run|walk (it )?through|for example|trace|let'?s try)/, label: "Walk through an example" },
+];
+
+const P = {
+  "two-sum": {
+    name: "Two Sum",
+    text: "Given an array of integers nums and an integer target, return the indices of the two numbers that add up to target. Exactly one answer exists, and you may not use the same element twice.",
+    signals: [
+      { id: "map", kind: "good", re: /\b(hash ?map|hash ?table|dictionary|dict|hash ?set|map (from|of)|lookup table)/, label: "Hash map", why: "Storing value → index lets you find a partner in O(1), so the whole pass is O(n)." },
+      { id: "comp", kind: "good", re: /\b(complement|target minus|difference|remaining value|what i need)/, label: "Complement lookup", why: "For each x, look up target − x among the numbers already seen." },
+      { id: "order", kind: "good", re: /\b(one pass|single pass|as i go|before (adding|inserting|storing)|already seen)/, label: "Check before storing", why: "Checking for the complement before storing x means you never pair x with itself." },
+      { id: "nested", kind: "warn", re: /\b(nested loop|two loops|double loop|every pair|all pairs|each pair|inner loop)/, label: "Nested loops", why: "Correct, but O(n²). Good as a brute-force opener; then move to a hash map." },
+      { id: "n2", kind: "warn", re: /(n squared|n\^2|quadratic)/, label: "O(n²)", why: "That is the brute-force bound. The expected answer is O(n) time and O(n) space." },
+      { id: "sort", kind: "bad", re: /\bsort/, label: "Sorting", why: "Sorting scrambles the original indices you have to return. Two pointers after sorting only works if you carry the indices along, and it costs O(n log n)." },
+    ],
+    ideas: ["map", "comp", "order"],
+    explain: "Walk the array once. For each number x, compute need = target − x. If need is already in a map of value → index, return both indices. Otherwise store x's index and keep going. O(n) time, O(n) space.",
+    pseudo: `seen = empty map            // value -> index
+for i, x in nums:
+    need = target - x
+    if need in seen:
+        return [seen[need], i]
+    seen[x] = i`,
+    code: `def two_sum(nums, target):
+    seen = {}
+    for i, x in enumerate(nums):
+        need = target - x
+        if need in seen:
+            return [seen[need], i]
+        seen[x] = i
+    return []`,
+  },
+  "valid-parens": {
+    name: "Valid Parentheses",
+    text: "Given a string containing only the characters ( ) [ ] { }, decide whether it is valid: every opening bracket must be closed by the same type of bracket, in the correct order.",
+    signals: [
+      { id: "stack", kind: "good", re: /\bstack\b/, label: "Stack", why: "The most recent unmatched opener must close first: last in, first out." },
+      { id: "pushpop", kind: "good", re: /\b(push|pop|top of the stack|peek)/, label: "Push openers, pop on closers", why: "On a closer, the top of the stack must be its matching opener." },
+      { id: "pairs", kind: "good", re: /\b(map|dictionary|matching|corresponding|pairs? (up|with))/, label: "Closer → opener map", why: "A small map like {')':'(', ']':'[', '}':'{'} keeps the match check to one line." },
+      { id: "end", kind: "good", re: /\b(empty at the end|stack is empty|nothing left|leftover|remaining)/, label: "Stack empty at the end", why: "Leftover openers such as \"((\" mean the string is invalid." },
+      { id: "count", kind: "bad", re: /\b(count|counter|counting|tally)/, label: "Counting brackets", why: "Counts can't see order: \"([)]\" has balanced counts but is invalid." },
+      { id: "replace", kind: "warn", re: /\breplac/, label: "Repeated replace", why: "Deleting \"()\" pairs until nothing changes works, but it is O(n²)." },
+    ],
+    ideas: ["stack", "pushpop", "pairs", "end"],
+    explain: "Scan left to right. Push every opener. On a closer, the stack must be non-empty and its top must be the matching opener; pop it. At the end the stack must be empty. O(n) time, O(n) space.",
+    pseudo: `pairs = { ')':'(', ']':'[', '}':'{' }
+stack = []
+for ch in s:
+    if ch is an opener: push ch
+    else if stack is empty or top != pairs[ch]: return false
+    else: pop
+return stack is empty`,
+    code: `def is_valid(s):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in s:
+        if ch in pairs:
+            if not stack or stack[-1] != pairs[ch]:
+                return False
+            stack.pop()
+        else:
+            stack.append(ch)
+    return not stack`,
+  },
+  "reverse-list": {
+    name: "Reverse a Linked List",
+    text: "Given the head of a singly linked list, reverse the list in place and return the new head.",
+    signals: [
+      { id: "prev", kind: "good", re: /\b(prev|previous)\b/, label: "prev pointer", why: "prev trails behind curr and becomes each node's new next." },
+      { id: "next", kind: "good", re: /\b(save (the )?next|next (node|pointer)|temp|store next)/, label: "Save next before relinking", why: "Overwriting curr.next before saving it loses the rest of the list." },
+      { id: "iter", kind: "good", re: /\b(iterat|while loop|in place|three pointers)/, label: "Iterative, in place", why: "O(n) time and O(1) extra space." },
+      { id: "ret", kind: "good", re: /\breturn (the )?(prev|previous)/, label: "Return prev", why: "When curr reaches None, prev points at the new head." },
+      { id: "rec", kind: "warn", re: /\brecurs/, label: "Recursion", why: "Works, but uses O(n) call-stack space and can overflow on long lists. Mention the iterative version." },
+      { id: "array", kind: "warn", re: /\b(array|copy|new list|store (all|the) (nodes|values)|stack of nodes)/, label: "Extra storage", why: "Copying nodes or values costs O(n) extra space. Relinking pointers needs none." },
+    ],
+    ideas: ["prev", "next", "iter", "ret"],
+    explain: "Keep prev = None and curr = head. Each step: save nxt = curr.next, point curr.next at prev, then move prev and curr forward one node. When curr is None, prev is the new head. O(n) time, O(1) space.",
+    pseudo: `prev = null
+curr = head
+while curr is not null:
+    nxt = curr.next
+    curr.next = prev
+    prev = curr
+    curr = nxt
+return prev`,
+    code: `def reverse_list(head):
+    prev, curr = None, head
+    while curr:
+        nxt = curr.next
+        curr.next = prev
+        prev, curr = curr, nxt
+    return prev`,
+  },
+  "binary-search": {
+    name: "Binary Search",
+    text: "Given a sorted array of distinct integers and a target, return the index of target, or -1 if it is not present. Your solution must run in O(log n).",
+    signals: [
+      { id: "mid", kind: "good", re: /\b(mid|middle|midpoint)/, label: "Middle index", why: "Compare against the middle element and discard the half that can't hold the target." },
+      { id: "bounds", kind: "good", re: /\b(low|left|lo)\b[\s\S]*\b(high|right|hi)\b/, label: "Low and high bounds", why: "Two indices bracket the part of the array that can still contain the target." },
+      { id: "log", kind: "good", re: /\b(log ?n|logarithmic|halv|in half|cut .* half)/, label: "Halving gives O(log n)", why: "Each step throws away half the range." },
+      { id: "le", kind: "good", re: /(low|left) (<=|is less than or equal|less than or equal)/, label: "Loop while low <= high", why: "Using <= still checks the last remaining element." },
+      { id: "linear", kind: "bad", re: /\b(linear (scan|search)|loop through (each|every|the whole)|go through each|every element|one by one)/, label: "Linear scan", why: "That is O(n). The array is sorted, so you can discard half of it at each step." },
+      { id: "lowmid", kind: "warn", re: /\b(low|left) (equals|=|becomes) mid\b(?! ?\+)/, label: "low = mid", why: "Can loop forever when low and mid are equal. Use low = mid + 1 (and high = mid - 1)." },
+    ],
+    ideas: ["mid", "bounds", "log", "le"],
+    explain: "Keep low = 0 and high = n − 1. While low <= high, take mid = (low + high) // 2. If nums[mid] equals target, return mid. If it is smaller, search right (low = mid + 1); otherwise search left (high = mid − 1). Return -1 when the range empties. O(log n) time, O(1) space.",
+    pseudo: `low, high = 0, n - 1
+while low <= high:
+    mid = (low + high) // 2
+    if nums[mid] == target: return mid
+    if nums[mid] < target: low = mid + 1
+    else: high = mid - 1
+return -1`,
+    code: `def search(nums, target):
+    low, high = 0, len(nums) - 1
+    while low <= high:
+        mid = (low + high) // 2
+        if nums[mid] == target:
+            return mid
+        if nums[mid] < target:
+            low = mid + 1
+        else:
+            high = mid - 1
+    return -1`,
+  },
+  "max-subarray": {
+    name: "Maximum Subarray",
+    text: "Given an integer array nums, find the contiguous subarray with the largest sum and return that sum.",
+    signals: [
+      { id: "kadane", kind: "good", re: /\bkadane/, label: "Kadane's algorithm", why: "The standard O(n) answer." },
+      { id: "running", kind: "good", re: /\b(current sum|running sum|current max|max ending here|best ending here)/, label: "Running sum", why: "Track the best sum of a subarray that ends at the current index." },
+      { id: "best", kind: "good", re: /\b(max so far|best so far|global max|overall max|answer so far)/, label: "Best so far", why: "Keep the largest running sum you've seen; that's the answer." },
+      { id: "restart", kind: "good", re: /\b(start over|start fresh|restart|drop (the )?(prefix|previous)|max of (the )?(number|element|current|x))/, label: "Restart when the prefix hurts", why: "current = max(x, current + x): a negative prefix only drags the sum down." },
+      { id: "nested", kind: "warn", re: /\b(nested loop|all subarrays|every subarray|each subarray|two loops)/, label: "Checking every subarray", why: "O(n²) with prefix sums, O(n³) without. Fine as a baseline; Kadane is O(n)." },
+      { id: "zero", kind: "warn", re: /\breset (it |the sum )?to zero\b/, label: "Reset to zero", why: "If every number is negative this returns 0 instead of the largest negative. Start from nums[0], or use max(x, current + x)." },
+      { id: "sort", kind: "bad", re: /\bsort/, label: "Sorting", why: "The subarray must be contiguous. Sorting destroys the order." },
+    ],
+    ideas: ["running", "best", "restart"],
+    explain: "Kadane's algorithm: walk the array keeping current, the best sum of a subarray ending here, as max(x, current + x), and best, the largest current seen. Start both at nums[0] so all-negative arrays work. O(n) time, O(1) space.",
+    pseudo: `current = best = nums[0]
+for x in nums[1:]:
+    current = max(x, current + x)
+    best = max(best, current)
+return best`,
+    code: `def max_sub_array(nums):
+    current = best = nums[0]
+    for x in nums[1:]:
+        current = max(x, current + x)
+        best = max(best, current)
+    return best`,
+  },
+  "merge-intervals": {
+    name: "Merge Intervals",
+    text: "Given a list of intervals where intervals[i] = [start, end], merge every overlapping interval and return the list of non-overlapping intervals that covers them all.",
+    signals: [
+      { id: "sort", kind: "good", re: /\bsort/, label: "Sort by start", why: "After sorting by start, overlapping intervals sit next to each other. O(n log n)." },
+      { id: "overlap", kind: "good", re: /\boverlap/, label: "Overlap check", why: "The next interval overlaps the last merged one when next.start <= last.end." },
+      { id: "maxend", kind: "good", re: /\b(max(imum)? of (the )?(two )?ends?|extend the end|update the end|larger end|bigger end)/, label: "Extend with max(end)", why: "Use max(last.end, next.end): the next interval may sit entirely inside the last one." },
+      { id: "last", kind: "good", re: /\b(last (merged )?interval|previous interval|result list|output list|merged list)/, label: "Compare with the last merged", why: "You only ever need to compare with the most recent merged interval." },
+      { id: "nested", kind: "warn", re: /\b(nested loop|every pair|all pairs|each pair|compare every)/, label: "Comparing all pairs", why: "O(n²), and merges can chain, so you'd need repeated passes. Sort first." },
+    ],
+    ideas: ["sort", "overlap", "maxend", "last"],
+    explain: "Sort intervals by start. Start the result with the first one. For each next interval, if next.start <= last.end they overlap, so set last.end = max(last.end, next.end). Otherwise append it. O(n log n) time for the sort, O(n) for the output.",
+    pseudo: `sort intervals by start
+merged = [intervals[0]]
+for (s, e) in intervals[1:]:
+    if s <= merged.last.end:
+        merged.last.end = max(merged.last.end, e)
+    else:
+        append (s, e) to merged
+return merged`,
+    code: `def merge(intervals):
+    if not intervals:
+        return []
+    intervals.sort(key=lambda iv: iv[0])
+    merged = [list(intervals[0])]
+    for s, e in intervals[1:]:
+        if s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+    return merged`,
+  },
+  "climbing-stairs": {
+    name: "Climbing Stairs",
+    text: "You are climbing a staircase with n steps. Each time you can climb 1 or 2 steps. In how many distinct ways can you reach the top?",
+    signals: [
+      { id: "fib", kind: "good", re: /\bfibonacci/, label: "Fibonacci", why: "ways(n) follows the Fibonacci sequence." },
+      { id: "dp", kind: "good", re: /\b(dynamic programming|\bdp\b|memo|tabulat|bottom[ -]up|top[ -]down|subproblem)/, label: "Dynamic programming", why: "Each answer reuses the answers to smaller staircases." },
+      { id: "rec", kind: "good", re: /(n ?(minus|-) ?1[\s\S]*n ?(minus|-) ?2|previous two|last two|two before)/, label: "ways(n) = ways(n−1) + ways(n−2)", why: "Your last move was either a 1-step or a 2-step." },
+      { id: "base", kind: "good", re: /\bbase case/, label: "Base cases", why: "ways(1) = 1, ways(2) = 2." },
+      { id: "space", kind: "good", re: /\b(two variables|constant space|o of 1 space|o of one space)/, label: "O(1) space", why: "You only need the previous two values, not a whole table." },
+      { id: "plainrec", kind: "warn", re: /\b(2 to the n|two to the n|exponential)/, label: "Exponential time", why: "Plain recursion recomputes the same subproblems: O(2ⁿ). Memoize or loop." },
+      { id: "combo", kind: "warn", re: /\b(permutation|combination|factorial|choose)/, label: "Counting combinations directly", why: "Possible with binomial coefficients, but error-prone. DP is the expected answer." },
+    ],
+    ideas: ["dp", "rec", "base", "space"],
+    explain: "Your last move onto step n came from step n−1 or step n−2, so ways(n) = ways(n−1) + ways(n−2), with ways(1) = 1 and ways(2) = 2. Iterate keeping just the last two values. O(n) time, O(1) space.",
+    pseudo: `if n <= 2: return n
+a, b = 1, 2            // ways(1), ways(2)
+repeat n - 2 times:
+    a, b = b, a + b
+return b`,
+    code: `def climb_stairs(n):
+    if n <= 2:
+        return n
+    a, b = 1, 2
+    for _ in range(n - 2):
+        a, b = b, a + b
+    return b`,
+  },
+  "bank-account": {
+    name: "Bank Account class",
+    text: "Design an Account class with deposit, withdraw and get_balance. Reject zero, negative and invalid amounts, refuse withdrawals larger than the balance, and keep money exact. (This is account.py in your repo.)",
+    signals: [
+      { id: "decimal", kind: "good", re: /\b(decimal|integer cents|in cents|store cents)/, label: "Exact money type", why: "Decimal or integer cents keep 3.10 + 3.20 exactly 6.30." },
+      { id: "validate", kind: "good", re: /\b(validat|must be positive|greater than zero|non-?positive|check the amount)/, label: "Validate amounts", why: "Reject zero, negative and non-numeric input before touching the balance." },
+      { id: "overdraft", kind: "good", re: /\b(insufficient|overdraft|more than the balance|greater than the balance|enough (money|funds))/, label: "Refuse overdrafts", why: "Check amount > balance before subtracting." },
+      { id: "raise", kind: "good", re: /\b(raise|exception|throw|value ?error)/, label: "Raise on bad input", why: "A ValueError forces the caller to handle the problem." },
+      { id: "tests", kind: "good", re: /\b(pytest|unit test|test case)/, label: "Tests", why: "Your repo's test_account.py covers each rule; mention them." },
+      { id: "float", kind: "bad", re: /\bfloat/, label: "Floats for money", why: "0.1 + 0.2 != 0.3 in binary floating point. Use Decimal or integer cents." },
+      { id: "silent", kind: "warn", re: /\b(print an error|return false|return none|just ignore)/, label: "Silent failure", why: "Printing or returning False hides errors. Raise ValueError instead." },
+    ],
+    ideas: ["decimal", "validate", "overdraft", "raise"],
+    explain: "Hold the balance as a Decimal. Convert every amount with Decimal(str(amount)) and turn InvalidOperation into ValueError. Deposits and withdrawals must be positive, and a withdrawal larger than the balance raises \"Insufficient funds\". All operations are O(1).",
+    pseudo: `class Account:
+    balance = 0.00 (exact decimal)
+    deposit(amount):
+        a = to_decimal(amount)          // invalid -> error
+        if a <= 0: error "must be positive"
+        balance += a
+    withdraw(amount):
+        a = to_decimal(amount)
+        if a <= 0: error "must be positive"
+        if a > balance: error "Insufficient funds"
+        balance -= a`,
+    code: `from decimal import Decimal, InvalidOperation
+
+class Account:
+    def __init__(self):
+        self.balance = Decimal("0.00")
+
+    def deposit(self, amount):
+        amount = self._to_decimal(amount)
+        if amount <= 0:
+            raise ValueError("Deposit amount must be positive")
+        self.balance += amount
+
+    def withdraw(self, amount):
+        amount = self._to_decimal(amount)
+        if amount <= 0:
+            raise ValueError("Withdrawal amount must be positive")
+        if amount > self.balance:
+            raise ValueError("Insufficient funds")
+        self.balance -= amount
+
+    def get_balance(self):
+        return self.balance
+
+    def _to_decimal(self, amount):
+        try:
+            return Decimal(str(amount))
+        except InvalidOperation:
+            raise ValueError("Invalid amount")`,
+  },
+  "custom": { name: "My own problem…", text: "", signals: [], ideas: [] },
+};
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("tac-" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("tac-" + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("tac-" + k); } catch {} },
+};
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function codeBlock(text) {
+  const wrap = document.createElement("div"); wrap.className = "codewrap";
+  const pre = document.createElement("pre"); pre.textContent = text;
+  const b = document.createElement("button"); b.type = "button"; b.className = "copy"; b.textContent = "Copy";
+  b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; }
+    catch { const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selected"; }
+    setTimeout(() => (b.textContent = "Copy"), 1500);
+  });
+  wrap.append(pre, b); return wrap;
+}
+function section(title) { const h = document.createElement("h3"); h.textContent = title; return h; }
+
+// ---------- problem UI ----------
+let current = store.get("problem", "two-sum");
+if (!P[current]) current = "two-sum";
+for (const [id, p] of Object.entries(P)) {
+  const o = document.createElement("option"); o.value = id; o.textContent = p.name; $("problem").appendChild(o);
+}
+$("problem").value = current;
+$("customText").value = store.get("custom", "");
+
+function problemText() { return current === "custom" ? $("customText").value.trim() : P[current].text; }
+
+function renderProblem() {
+  const p = P[current];
+  $("statement").textContent = current === "custom" ? "Describe the problem below, then talk through it." : p.text;
+  $("customText").hidden = current !== "custom";
+  const ref = $("reference"); ref.innerHTML = "";
+  if (p.explain) {
+    const e = document.createElement("p"); e.textContent = p.explain;
+    ref.append(section("Explanation"), e, section("Pseudocode"), codeBlock(p.pseudo), section("Python"), codeBlock(p.code));
+    $("refBox").parentElement.hidden = false;
+  } else {
+    $("refBox").parentElement.hidden = true;
+  }
+  $("refBox").open = false;
+  seen.clear(); $("signals").innerHTML = "";
+  scan();
+}
+
+// ---------- keyword scanning ----------
+const seen = new Map(); // id -> signal
+function scan() {
+  const t = $("transcript").value.toLowerCase().replace(/[’']/g, "'");
+  const p = P[current];
+  for (const s of p.signals) {
+    if (!seen.has(s.id) && s.re.test(t)) { seen.set(s.id, s); addSignal(s); }
+  }
+  const habits = $("habits"); habits.innerHTML = "";
+  for (const h of HABITS) {
+    const li = document.createElement("li"); li.textContent = h.label; if (h.re.test(t)) li.className = "hit"; habits.appendChild(li);
+  }
+  const ideas = $("ideas"); ideas.innerHTML = "";
+  if (!p.ideas.length) {
+    ideas.innerHTML = `<li>Claude judges custom problems. Tap Ask Claude.</li>`;
+  }
+  for (const id of p.ideas) {
+    const s = p.signals.find(x => x.id === id);
+    const li = document.createElement("li"); li.textContent = s.label; if (seen.has(id)) li.className = "hit"; ideas.appendChild(li);
+  }
+  const n = (t.match(/\S+/g) || []).length;
+  $("words").textContent = `${n} ${n === 1 ? "word" : "words"}`;
+  if (!$("signals").children.length) {
+    $("signals").innerHTML = `<li class="empty">Hints appear here as you mention techniques, like “hash map”, “stack” or “O of n”.</li>`;
+  }
+}
+function addSignal(s) {
+  const list = $("signals");
+  const empty = list.querySelector(".empty"); if (empty) empty.remove();
+  const li = document.createElement("li"); li.className = "sig " + s.kind;
+  const mark = { good: "✓", warn: "!", bad: "✗" }[s.kind];
+  const lead = { good: "Good:", warn: "Careful:", bad: "Problem:" }[s.kind];
+  li.innerHTML = `<span class="mark" aria-hidden="true">${mark}</span><b>${lead} ${esc(s.label)}</b><p>${esc(s.why)}</p>`;
+  list.prepend(li);
+}
+
+// ---------- speech recognition ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+
+function setListening(on) {
+  listening = on;
+  $("mic").classList.toggle("on", on);
+  $("micLabel").textContent = on ? "Stop listening" : "Start listening";
+  $("status").textContent = on ? "Listening…" : "Not listening";
+  $("status").classList.toggle("live", on);
+  if (!on) $("interim").textContent = "";
+}
+function showMicHelp(reason) {
+  $("micHelp").hidden = false;
+  $("micHelp").textContent = reason + " You can still dictate: tap the box below, then tap the microphone key on the iPad keyboard and talk. Hints update as the text comes in.";
+}
+function appendFinal(text) {
+  const ta = $("transcript");
+  const sep = ta.value && !/\s$/.test(ta.value) ? " " : "";
+  ta.value += sep + text.trim();
+  ta.scrollTop = ta.scrollHeight;
+  store.set("transcript-" + current, ta.value);
+  scan(); armAuto();
+}
+
+if (!SR) {
+  $("mic").disabled = true;
+  showMicHelp("This browser can't listen directly.");
+} else {
+  $("mic").addEventListener("click", () => {
+    if (listening) { setListening(false); try { rec.stop(); } catch {} return; }
+    rec = new SR();
+    rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = e => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) appendFinal(r[0].transcript); else interim += r[0].transcript;
+      }
+      $("interim").textContent = interim;
+    };
+    rec.onerror = e => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "audio-capture") {
+        setListening(false);
+        showMicHelp(e.error === "audio-capture" ? "No microphone was found." : "Microphone access is blocked here.");
+      }
+    };
+    // Safari ends continuous sessions after silence; restart while the user still wants to listen.
+    rec.onend = () => { if (listening) { try { rec.start(); } catch { setListening(false); } } };
+    try { rec.start(); setListening(true); } catch { showMicHelp("Listening could not start."); }
+  });
+}
+
+// ---------- Claude review ----------
+const SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["verdict", "headline", "right", "wrong", "explanation", "next_step", "complexity", "pseudocode", "code"],
+  properties: {
+    verdict: { type: "string", enum: ["on_track", "partly", "off_track"] },
+    headline: { type: "string" },
+    right: { type: "array", items: { type: "string" } },
+    wrong: { type: "array", items: { type: "string" } },
+    explanation: { type: "string" },
+    next_step: { type: "string" },
+    complexity: { type: "string" },
+    pseudocode: { type: "string" },
+    code: { type: "string" },
+  },
+};
+function buildPrompt(problem, transcript) {
+  return `You are a coding-interview coach. A candidate is practising out loud. Below is a speech-to-text transcript of what they said, so expect recognition errors (for example "oh of n" means O(n), "hash mat" means hash map).
+
+Problem:
+${problem}
+
+Transcript:
+"""${transcript}"""
+
+Judge the approach they have described so far. Be direct and specific, and quote or paraphrase what they said when you point something out. Do not invent claims they didn't make. If they have barely started, say what to address first.
+
+Reply with only a JSON object with these fields:
+- "verdict": "on_track" (correct approach), "partly" (right direction with gaps or mistakes) or "off_track" (wrong or no approach yet)
+- "headline": one sentence verdict for the candidate
+- "right": short strings, each something they got right
+- "wrong": short strings, each a mistake or gap and why it matters (empty if none)
+- "explanation": 2-4 sentences explaining the correct approach and why it works
+- "next_step": the one concrete thing they should say or do next
+- "complexity": time and space complexity of the best approach, e.g. "O(n) time, O(n) space"
+- "pseudocode": clear pseudocode for the best approach (follow their approach if it is correct)
+- "code": a complete, idiomatic Python 3 solution`;
+}
+
+let sample = null;                     // Claude in the artifact viewer, when available
+const API_MODEL = "claude-opus-5-5";
+const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.129.0/+esm";
+let client = null;
+
+async function askViaApi(prompt) {
+  const key = store.get("apiKey", "");
+  if (!key) { $("keyCard").hidden = false; $("keyBox").open = true; throw new Error("Add an Anthropic API key under Claude connection to get reviews."); }
+  if (!client) {
+    const { default: Anthropic } = await import(SDK_URL);
+    client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+  }
+  const res = await client.beta.messages.create({
+    model: API_MODEL,
+    max_tokens: 16000,
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
+    output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+    messages: [{ role: "user", content: prompt }],
+  });
+  if (res.stop_reason === "refusal") throw new Error("Claude declined to review this. Try rephrasing the problem.");
+  const text = res.content.filter(b => b.type === "text").map(b => b.text).join("");
+  return JSON.parse(text);
+}
+
+let asking = false, lastAskedLen = 0;
+async function ask() {
+  const transcript = $("transcript").value.trim();
+  const problem = problemText();
+  const review = $("review");
+  if (!problem) { review.innerHTML = `<p class="err">Type your problem in the Problem box first.</p>`; return; }
+  if (transcript.split(/\s+/).length < 5) { review.innerHTML = `<p class="err">Say a little more about your approach first, at least a sentence.</p>`; return; }
+  if (asking) return;
+  asking = true; $("ask").disabled = true; lastAskedLen = transcript.length;
+  $("verdict").innerHTML = "";
+  review.innerHTML = `<p class="thinking">Claude is reviewing what you said…</p>`;
+  try {
+    const prompt = buildPrompt(problem, transcript.slice(-12000));
+    const r = sample ? await sample.json(prompt, { cache: false }) : await askViaApi(prompt);
+    renderReview(r);
+  } catch (e) {
+    const msg = e?.code === "not_granted" || e?.code === "sampling_disabled" ? "Claude isn't allowed on this page for your account."
+      : e?.code === "rate_limited" ? "Too many requests right now. Wait a minute and try again."
+      : e?.code === "invalid_json" ? "Claude's reply couldn't be read. Tap Ask Claude to try again."
+      : e?.status === 401 ? "That API key was rejected. Check it under Claude connection."
+      : e?.message || "Something went wrong reaching Claude. Try again.";
+    review.innerHTML = `<p class="err"></p>`; review.firstChild.textContent = msg;
+    if (e?.status === 401) { client = null; $("keyCard").hidden = false; $("keyBox").open = true; }
+  } finally {
+    asking = false; $("ask").disabled = false;
+  }
+}
+function renderReview(r) {
+  const labels = { on_track: "On track", partly: "Partly right", off_track: "Off track" };
+  const v = labels[r.verdict] ? r.verdict : "partly";
+  $("verdict").innerHTML = `<span class="verdict ${v}">${labels[v]}</span>`;
+  const review = $("review"); review.innerHTML = "";
+  const h = document.createElement("p"); h.className = "headline"; h.textContent = r.headline || ""; review.append(h);
+  const list = (title, items, cls) => {
+    if (!Array.isArray(items) || !items.length) return;
+    const ul = document.createElement("ul"); ul.className = cls;
+    for (const it of items) { const li = document.createElement("li"); li.textContent = it; ul.append(li); }
+    review.append(section(title), ul);
+  };
+  list("What's right", r.right, "right");
+  list("What's wrong", r.wrong, "wrong");
+  const para = (title, text) => { if (!text) return; const p = document.createElement("p"); p.textContent = text; review.append(section(title), p); };
+  para("Explanation", r.explanation);
+  para("Say this next", r.next_step);
+  para("Complexity", r.complexity);
+  if (r.pseudocode) review.append(section("Pseudocode"), codeBlock(r.pseudocode));
+  if (r.code) review.append(section("Python"), codeBlock(r.code));
+}
+$("ask").addEventListener("click", ask);
+
+// Auto review on a pause (only with your own API key; never on a timer through the viewer).
+let autoTimer = null;
+function armAuto() {
+  clearTimeout(autoTimer);
+  if (sample || !$("auto").checked) return;
+  autoTimer = setTimeout(() => {
+    const len = $("transcript").value.trim().length;
+    if (len - lastAskedLen > 120) ask();
+  }, 5000);
+}
+$("auto").checked = store.get("auto", false);
+$("auto").addEventListener("change", () => store.set("auto", $("auto").checked));
+
+// ---------- key management ----------
+function renderKeyState() { $("keyState").textContent = store.get("apiKey", "") ? "Key saved on this device." : "No key saved."; }
+$("saveKey").addEventListener("click", () => {
+  const k = $("apiKey").value.trim(); if (!k) return;
+  store.set("apiKey", k); client = null; $("apiKey").value = ""; renderKeyState();
+});
+$("forgetKey").addEventListener("click", () => { store.del("apiKey"); client = null; renderKeyState(); });
+
+// ---------- wiring ----------
+$("problem").addEventListener("change", () => {
+  current = $("problem").value; store.set("problem", current);
+  $("transcript").value = store.get("transcript-" + current, "");
+  $("review").innerHTML = `<p class="empty">Explain your approach, then tap <b>Ask Claude</b>.</p>`; $("verdict").innerHTML = "";
+  lastAskedLen = 0;
+  renderProblem();
+});
+$("customText").addEventListener("input", () => store.set("custom", $("customText").value));
+$("transcript").addEventListener("input", () => { store.set("transcript-" + current, $("transcript").value); scan(); armAuto(); });
+$("clear").addEventListener("click", () => {
+  $("transcript").value = ""; store.set("transcript-" + current, ""); lastAskedLen = 0;
+  seen.clear(); $("signals").innerHTML = ""; scan();
+});
+function setBig(on) { document.documentElement.classList.toggle("big", on); $("big").setAttribute("aria-pressed", on); store.set("big", on); }
+$("big").addEventListener("click", () => setBig(!document.documentElement.classList.contains("big")));
+setBig(store.get("big", false));
+
+// First run shows a worked example so the page demonstrates itself.
+const saved = store.get("transcript-" + current, null);
+$("transcript").value = saved ?? (current === "two-sum"
+  ? "Example: first I'd clarify whether the array can have duplicates. The brute force is two nested loops over every pair, which is O of n squared. Better: one pass with a hash map from value to index, and for each number I check whether its complement, target minus the number, is already in the map before storing it. That's O of n time and O of n space."
+  : "");
+renderProblem();
+renderKeyState();
+
+// Decide how to reach Claude: the viewer's own Claude inside claude.ai, else the user's API key.
+(async () => {
+  const s = window.claude?.use ? await window.claude.use("sample").catch(() => null) : null;
+  if (s) { sample = s; return; }
+  $("keyCard").hidden = false;
+  $("autoWrap").hidden = false;
+})();
+</script>
+</body>
+</html>
